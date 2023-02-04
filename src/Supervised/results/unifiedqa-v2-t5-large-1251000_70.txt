@@ -1,0 +1,5 @@
+Accuracy = 66.49171270718232
+Consistency = 29.957203994293867
+Paraphrase-Original Consistency = 64.40798858773181
+Scope-Original Consistency = 43.00998573466477
+Affirmative-Original Consistency = 46.3623395149786

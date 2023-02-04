@@ -1,0 +1,11 @@
+0
+conda
+activated
+W&B disabled.
+setup
+Traceback (most recent call last):
+  File "compute_unifiedqa_stats.py", line 228, in <module>
+    main(args)
+  File "compute_unifiedqa_stats.py", line 170, in main
+    best_checkpoint = best_checkpoints[(MODEL_NAME, SEED)][-1][0]  # Gets name of best checkpoint
+IndexError: list index out of range

@@ -1,0 +1,11 @@
+W&B disabled.
+The cache for model files in Transformers v4.22.0 has been updated. Migrating your old cache. This is a one-time only operation. You can interrupt this and resume the migration later on by calling `transformers.utils.move_cache()`.
+  0%|          | 0/5 [00:00<?, ?it/s] 20%|██        | 1/5 [00:00<00:01,  2.12it/s] 40%|████      | 2/5 [00:00<00:01,  2.97it/s] 60%|██████    | 3/5 [00:00<00:00,  3.39it/s] 80%|████████  | 4/5 [00:01<00:00,  3.60it/s]100%|██████████| 5/5 [00:01<00:00,  3.75it/s]100%|██████████| 5/5 [00:01<00:00,  3.43it/s]
+Traceback (most recent call last):
+  File "run_negatedqa_t5.py", line 682, in <module>
+    main()
+  File "run_negatedqa_t5.py", line 264, in main
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+  File "/uufs/chpc.utah.edu/common/home/u0403624/miniconda3/envs/38/lib/python3.8/site-packages/transformers/hf_argparser.py", line 235, in parse_args_into_dataclasses
+    raise ValueError(f"Some specified arguments are not used by the HfArgumentParser: {remaining_args}")
+ValueError: Some specified arguments are not used by the HfArgumentParser: [' #', ' #']
