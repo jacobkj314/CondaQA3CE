@@ -252,7 +252,16 @@ summarization_name_mapping = {
 # # # START MY SETUP CODE
 
 import torch
-
+# # # # #
+class Sout():
+  def __init__(self):
+    with open("../../../stdout", "w") as stdout:
+      stdout.write("")
+  def write(self, content):
+    with open("../../../stdout", "a") as stdout:
+      stdout.write(content)
+sout = Sout()
+# # # # #
 def get_multiple_token_likelihood(model, input_ids, out_ids, attention_mask = None, decode_in_tokens = None):
   if attention_mask is None:
     attention_mask = torch.ones_like(input_ids).to(input_ids.device)
@@ -264,9 +273,13 @@ def get_multiple_token_likelihood(model, input_ids, out_ids, attention_mask = No
   iterInstances = [j for j in range(out_ids.shape[0])]
   for i in range(out_ids.shape[-1]):
     # decode_in_out[:,:lIn+i] is what has been generated up until this point
-    with open("/scratch/general/vast/u0403624/devices.txt", "w") as devicesFile: # # # # #
-      devicesFile.write(str((input_ids.device, attention_mask.device, decode_in_out.device)))
-    print("# # # # #")
+    # # # # #
+    sout.write(str(i) +" " + str((input_ids.shape, attention_mask.shape, decode_in_out.shape)) + "\n")
+    if i == 3:
+      sout.write(str(input_ids))
+      sout.write("\n")
+      sout.write(str(decode_in_out))
+    # # # # #
     scores = model.generate(input_ids=input_ids, attention_mask=attention_mask, decoder_input_ids = decode_in_out[:,:lIn+i], return_dict_in_generate=True, output_scores=True, max_new_tokens=1)['scores'][0]
     softmaxedScores = torch.log(torch.softmax(scores,dim=1))
     score = softmaxedScores[iterInstances,out_ids[:,i]]
@@ -414,7 +427,8 @@ def forwardCE(
                   get_multiple_token_likelihood(
                       self, 
                       input_ids.roll(i, 0), #question conditional, so try each question with each answer
-                      labels
+                      labels,
+                      attention_mask.roll(i, 0) # # # # # # #
                   )
               )
             z = torch.log( #normalizing denominator
