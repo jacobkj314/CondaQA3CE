@@ -252,40 +252,22 @@ summarization_name_mapping = {
 # # # START MY SETUP CODE
 
 import torch
-# # # # #
-class Sout():
-  def __init__(self):
-    with open("../../../stdout", "w") as stdout:
-      stdout.write("")
-  def write(self, content):
-    with open("../../../stdout", "a") as stdout:
-      stdout.write(content)
-sout = Sout()
-# # # # #
-def get_multiple_token_likelihood(model, input_ids, out_ids, attention_mask = None, decode_in_tokens = None):
-  if attention_mask is None:
-    attention_mask = torch.ones_like(input_ids).to(input_ids.device)
+
+def get_first_token_likelihood(model, input_ids, out_ids, attention_mask_full = None, decode_in_tokens = None):
+  if attention_mask_full is None:
+    attention_mask_full = torch.ones_like(input_ids).to(input_ids.device)
+  attention_mask = attention_mask_full[:, 1:2]
+
   if decode_in_tokens is None:
     decode_in_tokens = torch.zeros_like(out_ids)[...,:1] + model.config.decoder_start_token_id
-  likelihoods = []  #initialize sum of logits
-  decode_in_out = torch.cat((decode_in_tokens, out_ids), axis = -1).to(out_ids.device)  #concatenate decode_in_tokens and out_ids
-  lIn = decode_in_tokens.shape[-1]   #count how many tokens there are in decode_in_tokens
+
   iterInstances = [j for j in range(out_ids.shape[0])]
-  for i in range(out_ids.shape[-1]):
-    # decode_in_out[:,:lIn+i] is what has been generated up until this point
-    # # # # #
-    sout.write(str(i) +" " + str((input_ids.shape, attention_mask.shape, decode_in_out.shape)) + "\n")
-    if i == 3:
-      sout.write(str(input_ids))
-      sout.write("\n")
-      sout.write(str(decode_in_out))
-    # # # # #
-    scores = model.generate(input_ids=input_ids, attention_mask=attention_mask, decoder_input_ids = decode_in_out[:,:lIn+i], return_dict_in_generate=True, output_scores=True, max_new_tokens=1)['scores'][0]
-    softmaxedScores = torch.log(torch.softmax(scores,dim=1))
-    score = softmaxedScores[iterInstances,out_ids[:,i]]
-    score.requires_grad = True
-    likelihoods.append(score)
-  return sum(likelihoods) #just regular sum, because we are summing up the elements in a list (each element is a tensor)
+
+  scores = model.generate(input_ids=input_ids, attention_mask=attention_mask, decoder_input_ids = decode_in_tokens, return_dict_in_generate=True, output_scores=True, max_new_tokens=1)['scores'][0]
+  softmaxedScores = torch.log(torch.softmax(scores,dim=1))
+  score = softmaxedScores[iterInstances,out_ids[:,1]]
+  score.requires_grad = True
+  return score
 
 import copy
 import math
@@ -424,11 +406,11 @@ def forwardCE(
             ce = []
             for i in range(labels.shape[0]):
               ce.append(
-                  get_multiple_token_likelihood(
+                  get_first_token_likelihood(
                       self, 
                       input_ids.roll(i, 0), #question conditional, so try each question with each answer
                       labels,
-                      attention_mask.roll(i, 0) # # # # # # #
+                      attention_mask.roll(i, 0)
                   )
               )
             z = torch.log( #normalizing denominator
@@ -754,13 +736,6 @@ def main():
                 load_from_cache_file=not data_args.overwrite_cache,
                 desc="Running tokenizer on prediction dataset",
             )
-
-    ''' # # # # #
-    for d in train_dataset:
-        with open("/scratch/general/vast/u0403624/input_shape.txt", "w") as input_shape_file:
-            input_shape_file.write(str(d))
-            quit()
-    # # # # # '''
 
     # Data collator
     label_pad_token_id = -100 if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id
