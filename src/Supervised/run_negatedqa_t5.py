@@ -442,8 +442,57 @@ def forwardCE(
             encoder_hidden_states=encoder_outputs.hidden_states,
             encoder_attentions=encoder_outputs.attentions,
         )
+# # # END MY SETUP CODE
+# # # BEGIN DUA SETUP CODE
+import torch
+import random
+import numpy as np
+import math
+import json
+from torch import nn
+import torch.nn.functional as F
+from itertools import product
+#from scripts.script_utils import sample_sequences_v2, generate_beam_search # VSCode suggests I can safely comment this out, it appears to refer to a directory that was removed from the Main github repo and isn't used here, as far as I can tell
+from transformers import T5ForConditionalGeneration
 
-def forwardDuaQC(self, input_ids=None, attention_mask=None, decoder_input_ids=None,
+class ContrastiveEstimationQuestionCond(T5ForConditionalGeneration):
+    def __init__(self, config, supervision=None, ans_sym_id=None, max_ans_len=None, tokenizer=None,
+                 loss_type=['mle'], include_aug_q=True):
+        super().__init__(config)
+        self.supervision = supervision
+        self.ans_symbol_idx = ans_sym_id
+        self.max_answer_length = max_ans_len
+        self.tokenizer = tokenizer
+        self.loss_type = loss_type # 'lnorm', 'unnorm', 'eos', 'mle', 'nonover'
+        self.eos_symbol_idx = self.tokenizer.convert_tokens_to_ids("<eos>")
+        self.include_aug_q = include_aug_q
+
+    def generate(self, attention_mask=None, encoded_hidden_states=None, max_len=None):
+        batch_size, num_samples, seq_len = attention_mask.size()
+
+        #p (a|q, cij)
+        input_symbols = torch.ones(batch_size*num_samples, 1).fill_(self.ans_symbol_idx).type_as(attention_mask)
+        generated_ans = [input_symbols]
+
+        for i in range(max_len):
+            ans_outputs = self.decoder(
+                input_ids=input_symbols,
+                encoder_hidden_states=encoded_hidden_states.view(-1, encoded_hidden_states.size(-2),
+                                                                 encoded_hidden_states.size(-1)),
+                encoder_attention_mask=attention_mask.view(-1, attention_mask.size(-1))
+            )
+            ans_logits = self.lm_head(ans_outputs[0] * (self.model_dim ** -0.5))
+            ans_probs = ans_logits.log_softmax(-1)
+            pred_prob, pred_symbol = ans_probs[:, -1].topk(1, -1)
+            generated_ans.append(pred_symbol)
+            input_symbols = torch.cat([input_symbols, pred_symbol], -1)
+
+        generated_ans = torch.cat(generated_ans, -1)
+        ans_probs = ans_probs.view(batch_size, num_samples, -1, ans_probs.size(-1))
+        generated_ans = generated_ans.view(batch_size, num_samples, -1)
+        return [generated_ans, ans_probs]
+
+    def forward(self, input_ids=None, attention_mask=None, decoder_input_ids=None,
                 lm_labels=None, decoder_attention_mask=None, contrast_labels=None,
                 encoder_outputs=None, use_cache=None, decoder_past_key_value_states=None,
                 encoded_hidden_states=None, max_len=None, generate_answer=False):
@@ -569,7 +618,7 @@ def forwardDuaQC(self, input_ids=None, attention_mask=None, decoder_input_ids=No
         outputs += [loss, lm_logprobs]
 
         return outputs
-# # # END MY SETUP CODE
+# # # END DUA SETUP CODE
 
 def main():
     # See all possible arguments in src/transformers/training_args.py
@@ -718,9 +767,15 @@ def main():
     )
     # # # BEGIN MODEL MODIFICATION CODE
 
-    #This replaces model's forward function with the new one which includes CE
+    #This was my implementation, which we probably don't need anymore
+    '''#This replaces model's forward function with the new one which includes CE
     import types
-    model.forward = types.MethodType(forwardCE, model)
+    model.forward = types.MethodType(forwardCE, model)'''
+
+    #This version uses the original CE for instance bundles implementation, found here: https://github.com/dDua/contrastive-estimation
+    model, uqa = ContrastiveEstimationQuestionCond(config, tokenizer = tokenizer), model #swap variable names
+    model.load_state_dict(uqa.state_dict())
+    del uqa
 
     # # # END MODEL MODIFICATION CODE
 
