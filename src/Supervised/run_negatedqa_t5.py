@@ -492,11 +492,35 @@ class ContrastiveEstimationQuestionCond(T5ForConditionalGeneration):
         generated_ans = generated_ans.view(batch_size, num_samples, -1)
         return [generated_ans, ans_probs]
 
-    def forward(self, input_ids=None, attention_mask=None, decoder_input_ids=None,
-                lm_labels=None, decoder_attention_mask=None, contrast_labels=None,
-                encoder_outputs=None, use_cache=None, decoder_past_key_value_states=None,
-                encoded_hidden_states=None, max_len=None, generate_answer=False):
+    def forward(self, input_ids=None, 
+                      attention_mask=None, 
+                      decoder_input_ids=None,
+                      lm_labels=None, 
+                      decoder_attention_mask=None, 
+                      contrast_labels=None,
+                      encoder_outputs=None, 
+                      use_cache=None, 
+                      decoder_past_key_value_states=None,
+                      encoded_hidden_states=None, 
+                      max_len=None, 
+                      generate_answer=False
+                ):
+        
+        # # #
+        # Add one more dimension (batch size = 1) to input_ids and attention_mask
+        input_ids = input_ids[None, ...]
+        attention_mask = attention_mask[None, ...]
 
+        #create decoder_input_ids, decoder_attention_mask
+        if decoder_input_ids is None:
+          decoder_input_ids = torch.zeros_like(input_ids)[:, :1, ...]
+        if decoder_attention_mask is None:
+          decoder_attention_mask = torch.ones_like(input_ids)[:, :1, ...]
+        if lm_labels is None:
+          lm_labels = labels
+
+        # # #
+        
         batch_size, num_samples_q, seq_len = input_ids.size()
         _, num_samples_a, ans_len = decoder_input_ids.size()
         input_mask = (attention_mask.sum(-1) > 0).long()
