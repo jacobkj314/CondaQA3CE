@@ -37,7 +37,7 @@ from transformers import (
     AutoTokenizer,
     DataCollatorForSeq2Seq,
     HfArgumentParser,
-    #Seq2SeqTrainer,
+    Seq2SeqTrainer,
     Seq2SeqTrainingArguments,
     set_seed,
     T5Tokenizer,
@@ -444,7 +444,6 @@ def forwardCE(
         )
 # # # END MY SETUP CODE
 # # # START TRAINER SETUP CODE
-del Seq2SeqTrainer
 # Copyright 2020 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -472,14 +471,14 @@ from transformers.trainer import Trainer
 from transformers.trainer_pt_utils import get_tpu_sampler
 from transformers.trainer_utils import PredictionOutput
 from transformers.training_args import ParallelMode
-from transformers.utils import logging
+from transformers.utils import logging as trainerLogging # # # renamed to prevent naming collision
 
 
 if version.parse(torch.__version__) >= version.parse("1.6"):
     from torch.cuda.amp import autocast
 
 
-loggewr = logging.get_logger(__name__)
+loggewr = trainerLogging.get_logger(__name__)
 
 
 
@@ -708,6 +707,9 @@ def main():
         datefmt="%m/%d/%Y %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
+    # # # # #
+    print("why does this work")
+    # # # # #
     log_level = training_args.get_process_log_level()
     logger.setLevel(log_level)
     datasets.utils.logging.set_verbosity(log_level)
