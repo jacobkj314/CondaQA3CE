@@ -479,11 +479,11 @@ if version.parse(torch.__version__) >= version.parse("1.6"):
     from torch.cuda.amp import autocast
 
 
-logger = logging.get_logger(__name__)
+loggewr = logging.get_logger(__name__)
 
 
 
-[DOCS]
+
 class Seq2SeqTrainer(Trainer):
     def _get_train_sampler(self) -> Optional[torch.utils.data.sampler.Sampler]:
         if isinstance(self.train_dataset, torch.utils.data.IterableDataset):
@@ -504,7 +504,7 @@ class Seq2SeqTrainer(Trainer):
             )
 
 
-[DOCS]
+
     def evaluate(
         self,
         eval_dataset: Optional[Dataset] = None,
@@ -548,7 +548,7 @@ class Seq2SeqTrainer(Trainer):
 
 
 
-[DOCS]
+
     def predict(
         self,
         test_dataset: Dataset,
