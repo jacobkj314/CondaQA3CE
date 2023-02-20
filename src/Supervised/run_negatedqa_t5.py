@@ -444,7 +444,8 @@ def forwardCE(
         )
 # # # END MY SETUP CODE
 # # # START TRAINER SETUP CODE
-# Copyright 2020 The HuggingFace Team. All rights reserved.
+# coding=utf-8
+# Copyright 2020-present the HuggingFace Inc. team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -457,235 +458,290 @@ def forwardCE(
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""
+The Trainer class, to easily train a 🤗 Transformers from scratch or finetune it on a new task.
+"""
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+import contextlib
+import functools
+import glob
+import inspect
+import math
+import os
+import random
+import re
+import shutil
+import sys
+import time
+import warnings
+from collections.abc import Mapping
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
+from tqdm.auto import tqdm
+
+
+# Integrations must be imported before ML frameworks:
+from transformers.integrations import (  # isort: split
+    default_hp_search_backend,
+    get_reporting_integration_callbacks,
+    hp_params,
+    is_fairscale_available,
+    is_optuna_available,
+    is_ray_tune_available,
+    is_sigopt_available,
+    is_wandb_available,
+    run_hp_search_optuna,
+    run_hp_search_ray,
+    run_hp_search_sigopt,
+    run_hp_search_wandb,
+)
+
+import numpy as np
 import torch
+import torch.distributed as dist
 from packaging import version
 from torch import nn
-from torch.utils.data import DistributedSampler, RandomSampler
-from torch.utils.data.dataset import Dataset
+from torch.utils.data import DataLoader, Dataset, RandomSampler, SequentialSampler
+from torch.utils.data.distributed import DistributedSampler
 
-from transformers.file_utils import is_torch_tpu_available
-from transformers.trainer import Trainer
-from transformers.trainer_pt_utils import get_tpu_sampler
-from transformers.trainer_utils import PredictionOutput
-from transformers.training_args import ParallelMode
-from transformers.utils import logging as trainerLogging # # # renamed to prevent naming collision
+from huggingface_hub import Repository
+
+from transformers import __version__
+from transformers.configuration_utils import PretrainedConfig
+from transformers.data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
+from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
+from transformers.deepspeed import deepspeed_init, is_deepspeed_zero3_enabled
+from transformers.dependency_versions_check import dep_version_check
+from transformers.modelcard import TrainingSummary
+from transformers.modeling_utils import PreTrainedModel, load_sharded_checkpoint, unwrap_model
+from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES, MODEL_MAPPING_NAMES
+from transformers.optimization import Adafactor, get_scheduler
+from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS, is_torch_greater_or_equal_than_1_10, is_torch_less_than_1_11
+from transformers.tokenization_utils_base import PreTrainedTokenizerBase
+from transformers.trainer_callback import (
+    CallbackHandler,
+    DefaultFlowCallback,
+    PrinterCallback,
+    ProgressCallback,
+    TrainerCallback,
+    TrainerControl,
+    TrainerState,
+)
+from transformers.trainer_pt_utils import (
+    DistributedLengthGroupedSampler,
+    DistributedSamplerWithLoop,
+    DistributedTensorGatherer,
+    IterableDatasetShard,
+    LabelSmoother,
+    LengthGroupedSampler,
+    SequentialDistributedSampler,
+    ShardSampler,
+    distributed_broadcast_scalars,
+    distributed_concat,
+    find_batch_size,
+    get_module_class_from_name,
+    get_parameter_names,
+    nested_concat,
+    nested_detach,
+    nested_numpify,
+    nested_truncate,
+    nested_xla_mesh_reduce,
+    reissue_pt_warnings,
+)
+from transformers.trainer_utils import (
+    PREFIX_CHECKPOINT_DIR,
+    BestRun,
+    EvalLoopOutput,
+    EvalPrediction,
+    FSDPOption,
+    HPSearchBackend,
+    HubStrategy,
+    IntervalStrategy,
+    PredictionOutput,
+    RemoveColumnsCollator,
+    ShardedDDPOption,
+    TrainerMemoryTracker,
+    TrainOutput,
+    default_compute_objective,
+    default_hp_space,
+    denumpify_detensorize,
+    enable_full_determinism,
+    find_executable_batch_size,
+    get_last_checkpoint,
+    has_length,
+    number_of_arguments,
+    seed_worker,
+    set_seed,
+    speed_metrics,
+)
+from transformers.training_args import OptimizerNames, ParallelMode, TrainingArguments
+from transformers.utils import (
+    CONFIG_NAME,
+    WEIGHTS_INDEX_NAME,
+    WEIGHTS_NAME,
+    find_labels,
+    get_full_repo_name,
+    is_apex_available,
+    is_datasets_available,
+    is_in_notebook,
+    is_ipex_available,
+    is_sagemaker_dp_enabled,
+    is_sagemaker_mp_enabled,
+    is_torch_tensorrt_fx_available,
+    is_torch_tpu_available,
+    is_torchdynamo_available,
+    # # #logging,
+)
+from transformers.utils import logging as tLogging
+
+from transformers.utils.generic import ContextManagers
 
 
-if version.parse(torch.__version__) >= version.parse("1.6"):
-    from torch.cuda.amp import autocast
+_is_native_cpu_amp_available = is_torch_greater_or_equal_than_1_10
+
+DEFAULT_CALLBACKS = [DefaultFlowCallback]
+DEFAULT_PROGRESS_CALLBACK = ProgressCallback
+
+if is_in_notebook():
+    from .utils.notebook import NotebookProgressCallback
+
+    DEFAULT_PROGRESS_CALLBACK = NotebookProgressCallback
+
+if is_apex_available():
+    from apex import amp
+
+if is_datasets_available():
+    import datasets
+
+if is_torch_tpu_available(check_device=False):
+    import torch_xla.core.xla_model as xm
+    import torch_xla.debug.metrics as met
+    import torch_xla.distributed.parallel_loader as pl
+
+if is_fairscale_available():
+    dep_version_check("fairscale")
+    import fairscale
+    from fairscale.nn.data_parallel import FullyShardedDataParallel as FullyShardedDDP
+    from fairscale.nn.data_parallel import ShardedDataParallel as ShardedDDP
+    from fairscale.nn.wrap import auto_wrap
+    from fairscale.optim import OSS
+    from fairscale.optim.grad_scaler import ShardedGradScaler
 
 
-loggewr = trainerLogging.get_logger(__name__)
+if is_sagemaker_mp_enabled():
+    import smdistributed.modelparallel.torch as smp
+    from smdistributed.modelparallel import __version__ as SMP_VERSION
+
+    IS_SAGEMAKER_MP_POST_1_10 = version.parse(SMP_VERSION) >= version.parse("1.10")
+
+    from transformers.trainer_pt_utils import smp_forward_backward, smp_forward_only, smp_gather, smp_nested_concat
+else:
+    IS_SAGEMAKER_MP_POST_1_10 = False
+
+
+if TYPE_CHECKING:
+    import optuna
+
+logger = tLogging.get_logger(__name__)
+
+
+# Name of the files used for checkpointing
+TRAINING_ARGS_NAME = "training_args.bin"
+TRAINER_STATE_NAME = "trainer_state.json"
+OPTIMIZER_NAME = "optimizer.pt"
+SCHEDULER_NAME = "scheduler.pt"
+SCALER_NAME = "scaler.pt"
 
 
 
 
-class Seq2SeqTrainer(Trainer):
-    def _get_train_sampler(self) -> Optional[torch.utils.data.sampler.Sampler]:
-        if isinstance(self.train_dataset, torch.utils.data.IterableDataset):
-            return None
-        elif is_torch_tpu_available():
-            return get_tpu_sampler(self.train_dataset)
-        else:
-            if self.args.sortish_sampler:
-                self.train_dataset.make_sortish_sampler(
-                    self.args.per_device_train_batch_size,
-                    distributed=(self.args.parallel_mode == ParallelMode.DISTRIBUTED),
-                )
-
-            return (
-                RandomSampler(self.train_dataset)
-                if self.args.local_rank == -1
-                else DistributedSampler(self.train_dataset)
-            )
-
-
-
-    def evaluate(
+class Seq2SeqTrainerCE(Seq2SeqTrainer):
+    def train(
         self,
-        eval_dataset: Optional[Dataset] = None,
-        ignore_keys: Optional[List[str]] = None,
-        metric_key_prefix: str = "eval",
-        max_length: Optional[int] = None,
-        num_beams: Optional[int] = None,
-    ) -> Dict[str, float]:
+        resume_from_checkpoint: Optional[Union[str, bool]] = None,
+        trial: Union["optuna.Trial", Dict[str, Any]] = None,
+        ignore_keys_for_eval: Optional[List[str]] = None,
+        **kwargs,
+    ):
         """
-        Run evaluation and returns metrics.
-
-        The calling script will be responsible for providing a method to compute metrics, as they are task-dependent
-        (pass it to the init :obj:`compute_metrics` argument).
-
-        You can also subclass and override this method to inject custom behavior.
+        Main training entry point.
 
         Args:
-            eval_dataset (:obj:`Dataset`, `optional`):
-                Pass a dataset if you wish to override :obj:`self.eval_dataset`. If it is an :obj:`datasets.Dataset`,
-                columns not accepted by the ``model.forward()`` method are automatically removed. It must implement the
-                :obj:`__len__` method.
-            ignore_keys (:obj:`List[str]`, `optional`):
+            resume_from_checkpoint (`str` or `bool`, *optional*):
+                If a `str`, local path to a saved checkpoint as saved by a previous instance of [`Trainer`]. If a
+                `bool` and equals `True`, load the last checkpoint in *args.output_dir* as saved by a previous instance
+                of [`Trainer`]. If present, training will resume from the model/optimizer/scheduler states loaded here.
+            trial (`optuna.Trial` or `Dict[str, Any]`, *optional*):
+                The trial run or the hyperparameter dictionary for hyperparameter search.
+            ignore_keys_for_eval (`List[str]`, *optional*)
                 A list of keys in the output of your model (if it is a dictionary) that should be ignored when
-                gathering predictions.
-            metric_key_prefix (:obj:`str`, `optional`, defaults to :obj:`"eval"`):
-                An optional prefix to be used as the metrics key prefix. For example the metrics "bleu" will be named
-                "eval_bleu" if the prefix is ``"eval"`` (default)
-            max_length (:obj:`int`, `optional`):
-                The maximum target length to use when predicting with the generate method.
-            num_beams (:obj:`int`, `optional`):
-                Number of beams for beam search that will be used when predicting with the generate method. 1 means no
-                beam search.
-
-        Returns:
-            A dictionary containing the evaluation loss and the potential metrics computed from the predictions. The
-            dictionary also contains the epoch number which comes from the training state.
+                gathering predictions for evaluation during the training.
+            kwargs:
+                Additional keyword arguments used to hide deprecated arguments
         """
-        self._max_length = max_length
-        self._num_beams = num_beams
-        return super().evaluate(eval_dataset, ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix)
+        if resume_from_checkpoint is False:
+            resume_from_checkpoint = None
 
+        # memory metrics - must set up as early as possible
+        self._memory_tracker.start()
 
+        args = self.args
 
+        self.is_in_train = True
 
-    def predict(
-        self,
-        test_dataset: Dataset,
-        ignore_keys: Optional[List[str]] = None,
-        metric_key_prefix: str = "eval",
-        max_length: Optional[int] = None,
-        num_beams: Optional[int] = None,
-    ) -> PredictionOutput:
-        """
-        Run prediction and returns predictions and potential metrics.
+        # do_train is not a reliable argument, as it might not be set and .train() still called, so
+        # the following is a workaround:
+        if (args.fp16_full_eval or args.bf16_full_eval) and not args.do_train:
+            self._move_model_to_device(self.model, args.device)
 
-        Depending on the dataset and your use case, your test dataset may contain labels. In that case, this method
-        will also return metrics, like in :obj:`evaluate()`.
-
-        Args:
-            test_dataset (:obj:`Dataset`):
-                Dataset to run the predictions on. If it is an :obj:`datasets.Dataset`, columns not accepted by the
-                ``model.forward()`` method are automatically removed. Has to implement the method :obj:`__len__`
-            ignore_keys (:obj:`List[str]`, `optional`):
-                A list of keys in the output of your model (if it is a dictionary) that should be ignored when
-                gathering predictions.
-            metric_key_prefix (:obj:`str`, `optional`, defaults to :obj:`"eval"`):
-                An optional prefix to be used as the metrics key prefix. For example the metrics "bleu" will be named
-                "eval_bleu" if the prefix is ``"eval"`` (default)
-            max_length (:obj:`int`, `optional`):
-                The maximum target length to use when predicting with the generate method.
-            num_beams (:obj:`int`, `optional`):
-                Number of beams for beam search that will be used when predicting with the generate method. 1 means no
-                beam search.
-
-        .. note::
-
-            If your predictions or labels have different sequence lengths (for instance because you're doing dynamic
-            padding in a token classification task) the predictions will be padded (on the right) to allow for
-            concatenation into one array. The padding index is -100.
-
-        Returns: `NamedTuple` A namedtuple with the following keys:
-
-            - predictions (:obj:`np.ndarray`): The predictions on :obj:`test_dataset`.
-            - label_ids (:obj:`np.ndarray`, `optional`): The labels (if the dataset contained some).
-            - metrics (:obj:`Dict[str, float]`, `optional`): The potential dictionary of metrics (if the dataset
-              contained labels).
-        """
-        self._max_length = max_length
-        self._num_beams = num_beams
-        return super().predict(test_dataset, ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix)
-
-
-    def prediction_step(
-        self,
-        model: nn.Module,
-        inputs: Dict[str, Union[torch.Tensor, Any]],
-        prediction_loss_only: bool,
-        ignore_keys: Optional[List[str]] = None,
-    ) -> Tuple[Optional[float], Optional[torch.Tensor], Optional[torch.Tensor]]:
-        """
-        Perform an evaluation step on :obj:`model` using obj:`inputs`.
-
-        Subclass and override to inject custom behavior.
-
-        Args:
-            model (:obj:`nn.Module`):
-                The model to evaluate.
-            inputs (:obj:`Dict[str, Union[torch.Tensor, Any]]`):
-                The inputs and targets of the model.
-
-                The dictionary will be unpacked before being fed to the model. Most models expect the targets under the
-                argument :obj:`labels`. Check your model's documentation for all accepted arguments.
-            prediction_loss_only (:obj:`bool`):
-                Whether or not to return the loss only.
-
-        Return:
-            Tuple[Optional[float], Optional[torch.Tensor], Optional[torch.Tensor]]: A tuple with the loss, logits and
-            labels (each being optional).
-        """
-
-        if not self.args.predict_with_generate or prediction_loss_only:
-            return super().prediction_step(
-                model, inputs, prediction_loss_only=prediction_loss_only, ignore_keys=ignore_keys
+        if "model_path" in kwargs:
+            resume_from_checkpoint = kwargs.pop("model_path")
+            warnings.warn(
+                "`model_path` is deprecated and will be removed in a future version. Use `resume_from_checkpoint` "
+                "instead.",
+                FutureWarning,
             )
+        if len(kwargs) > 0:
+            raise TypeError(f"train() received got unexpected keyword arguments: {', '.join(list(kwargs.keys()))}.")
+        # This might change the seed so needs to run first.
+        self._hp_search_setup(trial)
+        self._train_batch_size = self.args.train_batch_size
 
-        has_labels = "labels" in inputs
-        inputs = self._prepare_inputs(inputs)
+        # Model re-init
+        model_reloaded = False
+        if self.model_init is not None:
+            # Seed must be set before instantiating the model when using model_init.
+            enable_full_determinism(self.args.seed) if self.args.full_determinism else set_seed(self.args.seed)
+            self.model = self.call_model_init(trial)
+            model_reloaded = True
+            # Reinitializes optimizer and scheduler
+            self.optimizer, self.lr_scheduler = None, None
 
-        gen_kwargs = {
-            "max_length": self._max_length if self._max_length is not None else self.model.config.max_length,
-            "num_beams": self._num_beams if self._num_beams is not None else self.model.config.num_beams,
-        }
+        # Load potential model checkpoint
+        if isinstance(resume_from_checkpoint, bool) and resume_from_checkpoint:
+            resume_from_checkpoint = get_last_checkpoint(args.output_dir)
+            if resume_from_checkpoint is None:
+                raise ValueError(f"No valid checkpoint found in output directory ({args.output_dir})")
 
-        generated_tokens = self.model.generate(
-            inputs["input_ids"],
-            attention_mask=inputs["attention_mask"],
-            **gen_kwargs,
+        if resume_from_checkpoint is not None and not is_sagemaker_mp_enabled():
+            self._load_from_checkpoint(resume_from_checkpoint)
+
+        # If model was re-initialized, put it on the right device and update self.model_wrapped
+        if model_reloaded:
+            if self.place_model_on_device:
+                self._move_model_to_device(self.model, args.device)
+            self.model_wrapped = self.model
+
+        inner_training_loop = find_executable_batch_size(
+            self._inner_training_loop, self._train_batch_size, args.auto_find_batch_size
         )
-        # in case the batch is shorter than max length, the output should be padded
-        if generated_tokens.shape[-1] < gen_kwargs["max_length"]:
-            generated_tokens = self._pad_tensors_to_max_len(generated_tokens, gen_kwargs["max_length"])
-
-        with torch.no_grad():
-            if self.use_amp:
-                with autocast():
-                    outputs = model(**inputs)
-            else:
-                outputs = model(**inputs)
-            if has_labels:
-                if self.label_smoother is not None:
-                    loss = self.label_smoother(outputs, inputs["labels"]).mean().detach()
-                else:
-                    loss = (outputs["loss"] if isinstance(outputs, dict) else outputs[0]).mean().detach()
-            else:
-                loss = None
-
-        if self.args.prediction_loss_only:
-            return (loss, None, None)
-
-        labels = inputs["labels"]
-        if labels.shape[-1] < gen_kwargs["max_length"]:
-            labels = self._pad_tensors_to_max_len(labels, gen_kwargs["max_length"])
-
-        return (loss, generated_tokens, labels)
-
-    def _pad_tensors_to_max_len(self, tensor, max_length):
-        if self.tokenizer is None:
-            raise ValueError(
-                f"Tensor need to be padded to `max_length={max_length}` but no tokenzier was passed when creating "
-                "this `Trainer`. Make sure to create your `Trainer` with the appropriate tokenizer."
-            )
-        # If PAD token is not defined at least EOS token has to be defined
-        pad_token_id = (
-            self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else self.tokenizer.eos_token_id
+        return inner_training_loop(
+            args=args,
+            resume_from_checkpoint=resume_from_checkpoint,
+            trial=trial,
+            ignore_keys_for_eval=ignore_keys_for_eval,
         )
-
-        padded_tensor = pad_token_id * torch.ones(
-            (tensor.shape[0], max_length), dtype=tensor.dtype, device=tensor.device
-        )
-        padded_tensor[:, : tensor.shape[-1]] = tensor
-        return padded_tensor
-
 # # # END TRAINER SETUP CODE
 
 def main():
@@ -707,9 +763,7 @@ def main():
         datefmt="%m/%d/%Y %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
-    # # # # #
-    print("why does this work")
-    # # # # #
+
     log_level = training_args.get_process_log_level()
     logger.setLevel(log_level)
     datasets.utils.logging.set_verbosity(log_level)
@@ -1035,7 +1089,7 @@ def main():
         return result
 
     # Initialize our Trainer
-    trainer = Seq2SeqTrainer(
+    trainer = Seq2SeqTrainerCE(
         model=model,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
