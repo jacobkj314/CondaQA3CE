@@ -444,7 +444,7 @@ def forwardCE(
         )
 
 
-def bundLen(batch): #This should work as long as the batch size stays at 8 like it currently is
+def bundling(batch): #This should work as long as the batch size stays at 8 like it currently is
     yield {key:batch[key][:4,:] for key in batch}
     yield {key:batch[key][4:,:] for key in batch}
 # # # END MY SETUP CODE
@@ -913,7 +913,7 @@ class Seq2SeqTrainerCE(Seq2SeqTrainer):
                         with model.no_sync():
                             tr_losses_step.append(self.training_step(model, bundle))
                     else:
-                        tr_loss_step.append(self.training_step(model, bundle))
+                        tr_losses_step.append(self.training_step(model, bundle))
 
                     tr_loss_step = sum(tr_losses_step)
                 # # # END TRAINER MODIFICATIONS
