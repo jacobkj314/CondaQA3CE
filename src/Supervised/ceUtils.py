@@ -275,7 +275,7 @@ SCALER_NAME = "scaler.pt"
 
 
 
-
+from transformers import Seq2SeqTrainer
 class Seq2SeqTrainerCE(Seq2SeqTrainer):
     def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
         if self.train_dataset is None or not has_length(self.train_dataset):

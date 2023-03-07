@@ -187,7 +187,7 @@ class DataTrainingArguments:
         },
     )
     
-    samples: Optional[int] = field(
+    max_train_samples: Optional[int] = field(
         default=None,
         metadata={
             "help": "For debugging purposes or quicker training, truncate the number of training examples to this "
