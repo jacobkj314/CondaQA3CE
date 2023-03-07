@@ -939,7 +939,7 @@ def forwardCE(
         )
 
 # TODO update to custom batch size and custom bundle sizes
-def bundling(batch, lengths): #This should work as long as the batch size stays at 8 like it currently is
+def bundling(batch, lengths = None): #This should work as long as the batch size stays at 8 like it currently is
     yield {key:batch[key][:4,:] for key in batch}
     yield {key:batch[key][4:,:] for key in batch}
 # # # END MY SETUP CODE
