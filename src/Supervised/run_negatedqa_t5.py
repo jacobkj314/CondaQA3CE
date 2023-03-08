@@ -508,27 +508,29 @@ def main():
         return model_inputs'''
     # # # I replaced it with this:
     def preprocess_function(examples): #with bundles
-        result = examples.copy()
+        inputs = examples[text_column]
+        targets = examples[summary_column]
+        # print(inputs)
+        # print(prefix)
+        # print("---")
+        inputs = [[prefix + i for i in inp] for inp in inputs]# # # have to add the prefix to each instance in the bundle
+        model_inputs = [tokenizer(input, max_length=data_args.max_source_length, padding=padding, truncation=True) for input in inputs]
+        model_inputs = {col : [row[col] for row in model_inputs] for col in model_inputs[0]} # # # change from a list to a dictionary
 
-        inputs = [[instance['input'] for instance in bundle] for bundle in examples['bundle']]
-        inputs = [[prefix + i for i in inp] for inp in inputs] 
-        model_inputs = [tokenizer(inp, max_length=data_args.max_source_length, padding=padding, truncation=True) for inp in inputs]
-        for attribute in model_inputs[0]:
-          result[attribute] = [model_input[attribute] for model_input in model_inputs]
-
-
-        targets = [[instance['answer'] for instance in bundle] for bundle in examples['bundle']]
+        # Setup the tokenizer for targets
         with tokenizer.as_target_tokenizer():
-          labels = [tokenizer(trg, max_length=max_target_length, padding=padding, truncation=True) for trg in targets]
-        if padding == "max_length" and data_args.ignore_pad_token_for_loss: #i'm not 100% convinced that this works as intended, or is even called in the first place
-          labels["input_ids"] = [
-            [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]
-          ]
-        result["labels"] = [label["input_ids"] for label in labels]
+            labels = [tokenizer(target, max_length=max_target_length, padding=padding, truncation=True) for target in targets]
+            labels = {col : [row[col] for row in labels] for col in labels[0]}
 
+        # If we are padding here, replace all tokenizer.pad_token_id in the labels by -100 when we want to ignore
+        # padding in the loss.
+        if padding == "max_length" and data_args.ignore_pad_token_for_loss:
+            labels["input_ids"] = [
+                [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]
+            ]
 
-        result.pop("bundle")
-        return result
+        model_inputs["labels"] = labels["input_ids"]
+        return model_inputs
     # # #
 
     if training_args.do_train:
