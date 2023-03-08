@@ -371,7 +371,7 @@ class Seq2SeqTrainerCE(Seq2SeqTrainer):
             if self.args.world_size > 1:
                 train_dataset = IterableDatasetShard(
                     train_dataset,
-                    batch_size=self._train_batch_size,
+                    batch_size=1, # # #self._train_batch_size, #Changed this so that 1 bundle = 1 minibatch
                     drop_last=self.args.dataloader_drop_last,
                     num_processes=self.args.world_size,
                     process_index=self.args.process_index,
