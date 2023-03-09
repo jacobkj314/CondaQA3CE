@@ -1,7 +1,7 @@
 # # #Bundling Setup Code
 
-def bundling(batch): #This should work as long as the batch size stays at 8 like it currently is
-    batch_size = batch.shape[0]
+def bundling(batch): 
+    batch_size = batch['input_ids'].shape[0]
     for i in range(batch_size):
         yield {col:batch[col][i, ...] for col in batch}
 
