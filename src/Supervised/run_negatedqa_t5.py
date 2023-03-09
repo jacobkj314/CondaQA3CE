@@ -484,7 +484,7 @@ def main():
         )
 
     # # # This was the existing preprocess_function
-    '''def preprocess_function(examples):
+    def preprocess_function(examples):
         inputs = examples[text_column]
         targets = examples[summary_column]
         # print(inputs)
@@ -505,9 +505,9 @@ def main():
             ]
 
         model_inputs["labels"] = labels["input_ids"]
-        return model_inputs'''
-    # # # I replaced it with this:
-    def preprocess_function(examples): #with bundles
+        return model_inputs
+    # # # I also created a separate preprocess_function with bundles for the training set only
+    def preprocess_function_bundles(examples): #with bundles
         inputs = examples[text_column]
         targets = examples[summary_column]
         # print(inputs)
@@ -558,7 +558,8 @@ def main():
             eval_dataset = eval_dataset.select(range(data_args.max_eval_samples))
         with training_args.main_process_first(desc="validation dataset map pre-processing"):
             eval_dataset = eval_dataset.map(
-                preprocess_function,
+                # # #preprocess_function,
+                preprocess_function_bundles,# # # Added separate preprocess function that only applies to bundled training data
                 batched=True,
                 num_proc=data_args.preprocessing_num_workers,
                 remove_columns=column_names,
