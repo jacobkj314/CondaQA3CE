@@ -274,8 +274,7 @@ class Seq2SeqTrainerCE(Seq2SeqTrainer):
 
         else:
             if self.args.world_size <= 1:
-                # # #return RandomSampler(self.train_dataset, generator=generator)
-                return BundleSampler(self.train_dataset, generator=generator)# # # # #
+                return RandomSampler(self.train_dataset, generator=generator)
             elif (
                 self.args.parallel_mode in [ParallelMode.TPU, ParallelMode.SAGEMAKER_MODEL_PARALLEL]
                 and not self.args.dataloader_drop_last
