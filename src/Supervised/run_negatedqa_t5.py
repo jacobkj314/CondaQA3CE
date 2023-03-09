@@ -355,9 +355,11 @@ def main():
             data_args.dataset_name, data_args.dataset_config_name, cache_dir=model_args.cache_dir
         )
     else:
+        train_files = {}# # # 
         data_files = {}
         if data_args.train_file is not None:
-            data_files["train"] = data_args.train_file
+            # # # data_files["train"] = data_args.train_file
+            train_files["train"] = data_args.train_file # # #
             extension = data_args.train_file.split(".")[-1]
         if data_args.validation_file is not None:
             data_files["validation"] = data_args.validation_file
@@ -365,6 +367,7 @@ def main():
         if data_args.test_file is not None:
             data_files["test"] = data_args.test_file
             extension = data_args.test_file.split(".")[-1]
+        train_datasets = load_dataset(extension, data_files=train_files, cache_dir=model_args.cache_dir)# # #
         raw_datasets = load_dataset(extension, data_files=data_files, cache_dir=model_args.cache_dir)
     # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
@@ -403,17 +406,9 @@ def main():
         use_auth_token=True if model_args.use_auth_token else None,
     )
     # # # BEGIN MODEL MODIFICATION CODE
-
-    #This was my implementation, which we probably don't need anymore
     #This replaces model's forward function with the new one which includes CE
     import types
     model.forward = types.MethodType(forwardCE, model)
-
-    #This version uses the original CE for instance bundles implementation, found here: https://github.com/dDua/contrastive-estimation
-    '''model, uqa = ContrastiveEstimationQuestionCond(config, tokenizer = tokenizer), model #swap variable names
-    model.load_state_dict(uqa.state_dict())
-    del uqa'''
-
     # # # END MODEL MODIFICATION CODE
 
     model.resize_token_embeddings(len(tokenizer))
@@ -445,7 +440,8 @@ def main():
     # Preprocessing the datasets.
     # We need to tokenize inputs and targets.
     if training_args.do_train:
-        column_names = raw_datasets["train"].column_names
+        # # # column_names = raw_datasets["train"].column_names
+        column_names = train_datasets["train"].column_names# # #
     elif training_args.do_eval:
         column_names = raw_datasets["validation"].column_names
     elif training_args.do_predict:
@@ -534,14 +530,16 @@ def main():
     # # #
 
     if training_args.do_train:
-        if "train" not in raw_datasets:
+        # # # if "train" not in raw_datasets:
+        if "train" not in train_datasets:# # #
             raise ValueError("--do_train requires a train dataset")
-        train_dataset = raw_datasets["train"]
+        # # #train_dataset = raw_datasets["train"]
+        train_dataset = train_datasets["train"]# # #
         if data_args.max_train_samples is not None:
             train_dataset = train_dataset.select(range(data_args.max_train_samples))
         with training_args.main_process_first(desc="train dataset map pre-processing"):
             train_dataset = train_dataset.map(
-                preprocess_function,
+                preprocess_function_bundles,# # # Added separate preprocess function that only applies to bundled training data
                 batched=True,
                 num_proc=data_args.preprocessing_num_workers,
                 remove_columns=column_names,
@@ -559,7 +557,7 @@ def main():
         with training_args.main_process_first(desc="validation dataset map pre-processing"):
             eval_dataset = eval_dataset.map(
                 # # #preprocess_function,
-                preprocess_function_bundles,# # # Added separate preprocess function that only applies to bundled training data
+                preprocess_function,
                 batched=True,
                 num_proc=data_args.preprocessing_num_workers,
                 remove_columns=column_names,
