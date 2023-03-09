@@ -1,64 +1,11 @@
-# # #BundleSampler Setup Code
-import torch
-from torch import Tensor
-from typing import Iterator, Iterable, Optional, Sequence, List, TypeVar, Generic, Sized, Union
+# # #Bundling Setup Code
 
-from torch.utils.data import Sampler
-class BundleSampler(Sampler[int]):
-    r"""Samples elements randomly. If without replacement, then sample from a shuffled dataset.
-    If with replacement, then user can specify :attr:`num_samples` to draw.
+def bundling(batch): #This should work as long as the batch size stays at 8 like it currently is
+    batch_size = batch.shape[0]
+    for i in range(batch_size):
+        yield {col:batch[col][i, ...] for col in batch}
 
-    Args:
-        data_source (Dataset): dataset to sample from
-        replacement (bool): samples are drawn on-demand with replacement if ``True``, default=``False``
-        num_samples (int): number of samples to draw, default=`len(dataset)`.
-        generator (Generator): Generator used in sampling.
-    """
-    data_source: Sized
-    replacement: bool
 
-    def __init__(self, data_source: Sized, replacement: bool = False,
-                 num_samples: Optional[int] = None, generator=None) -> None:
-        self.data_source = data_source
-        self.replacement = replacement
-        self._num_samples = num_samples
-        self.generator = generator
-
-        if not isinstance(self.replacement, bool):
-            raise TypeError("replacement should be a boolean value, but got "
-                            "replacement={}".format(self.replacement))
-
-        if not isinstance(self.num_samples, int) or self.num_samples <= 0:
-            raise ValueError("num_samples should be a positive integer "
-                             "value, but got num_samples={}".format(self.num_samples))
-
-    @property
-    def num_samples(self) -> int:
-        # dataset size might change at runtime
-        if self._num_samples is None:
-            return len(self.data_source)
-        return self._num_samples
-
-    def __iter__(self) -> Iterator[int]:
-        n = len(self.data_source)
-        if self.generator is None:
-            seed = int(torch.empty((), dtype=torch.int64).random_().item())
-            generator = torch.Generator()
-            generator.manual_seed(seed)
-        else:
-            generator = self.generator
-
-        if self.replacement:
-            for _ in range(self.num_samples // 32):
-                yield from torch.randint(high=n, size=(32,), dtype=torch.int64, generator=generator).tolist()
-            yield from torch.randint(high=n, size=(self.num_samples % 32,), dtype=torch.int64, generator=generator).tolist()
-        else:
-            for _ in range(self.num_samples // n):
-                yield from torch.randperm(n, generator=generator).tolist()
-            yield from torch.randperm(n, generator=generator).tolist()[:self.num_samples % n]
-
-    def __len__(self) -> int:
-        return self.num_samples
 
 
 # # #
@@ -371,7 +318,7 @@ class Seq2SeqTrainerCE(Seq2SeqTrainer):
             if self.args.world_size > 1:
                 train_dataset = IterableDatasetShard(
                     train_dataset,
-                    batch_size=1, # # #self._train_batch_size, #Changed this so that 1 bundle = 1 minibatch
+                    batch_size=self._train_batch_size,
                     drop_last=self.args.dataloader_drop_last,
                     num_processes=self.args.world_size,
                     process_index=self.args.process_index,
@@ -638,7 +585,7 @@ class Seq2SeqTrainerCE(Seq2SeqTrainer):
                 '''
                 # # # BEGIN TRAINER MODIFICATIONS
                 tr_losses_step = []
-                for bundle in bundling(inputs):
+                for bundle in bundling(inputs): #this breaks a 3D minibatch down into 2D minibatches
                     if (
                         ((step + 1) % args.gradient_accumulation_steps != 0)
                         and args.local_rank != -1
@@ -987,10 +934,6 @@ def forwardCE(
             encoder_attentions=encoder_outputs.attentions,
         )
 
-# TODO update to custom batch size and custom bundle sizes
-def bundling(batch, lengths = None): #This should work as long as the batch size stays at 8 like it currently is
-    yield {key:batch[key][:4,:] for key in batch}
-    yield {key:batch[key][4:,:] for key in batch}
-# # # END MY SETUP CODE
+
 
 
