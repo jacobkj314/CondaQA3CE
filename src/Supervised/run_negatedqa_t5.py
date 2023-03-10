@@ -504,6 +504,9 @@ def main():
         return model_inputs
     # # # I also created a separate preprocess_function with bundles for the training set only
     def preprocess_function_bundles(examples): #with bundles
+
+        padding = "max_length" # # # I changed the value of padding
+
         inputs = examples[text_column]
         targets = examples[summary_column]
         # print(inputs)
@@ -522,7 +525,7 @@ def main():
         # padding in the loss.
         if padding == "max_length" and data_args.ignore_pad_token_for_loss:
             labels["input_ids"] = [
-                [(l if l != tokenizer.pad_token_id else -100) for l in label] for label in labels["input_ids"]
+                [[(l if l != tokenizer.pad_token_id else -100) for l in label] for label in instance] for instance in labels["input_ids"] # # # need to have one more nest
             ]
 
         model_inputs["labels"] = labels["input_ids"]

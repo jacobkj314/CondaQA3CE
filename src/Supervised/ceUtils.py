@@ -685,7 +685,7 @@ def get_first_token_likelihood(model, input_ids, out_ids, attention_mask_full = 
   iterInstances = [j for j in range(out_ids.shape[0])]
 
   scores = model.generate(input_ids=input_ids, attention_mask=attention_mask, decoder_input_ids = decode_in_tokens, return_dict_in_generate=True, output_scores=True, max_new_tokens=1)['scores'][0]
-  softmaxedScores = torch.log(torch.softmax(scores,dim=1))
+  softmaxedScores = torch.log(torch.softmax(scores,dim=1))#also transform to log-likelihood
   score = softmaxedScores[iterInstances,out_ids[:,1]]
   score.requires_grad = True
   return score
@@ -837,10 +837,10 @@ def forwardCE(
             z = torch.log( #normalizing denominator
                   sum(torch.exp(term) for term in ce) #add up all the denominators - using regular python sum because they are tensors in a list
                 ) 
-            ceLoss = torch.log( # # # should this be *-1 ? I think it should, so that by minimizing loss we maximize the proportion of the distribution occupied by the right question
+            ceLoss = torch.log( # return to log space# # # should this be *-1 ? I think it should, so that by minimizing loss we maximize the proportion of the distribution occupied by the right question
                 torch.sum(#sum across instances
-                    torch.exp(
-                      ce[0] - z #divide the correctly lined up pairings by normalizing constant (in log space)
+                    torch.exp( #switch from log space to linear space for sum
+                      ce[0] - z #divide the correctly lined up pairings by normalizing constant (in log space) - index 0 is lined up correctly
                     )
                 )
             )
