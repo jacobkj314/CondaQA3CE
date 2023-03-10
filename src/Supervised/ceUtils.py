@@ -266,7 +266,7 @@ class Seq2SeqTrainerCE(Seq2SeqTrainer):
 
         return DataLoader(
             train_dataset,
-            batch_size=1, # # # self._train_batch_size, #It still is happier with 1 than with variable sizes, although bundle() should work once I get this working
+            batch_size=1, # # # self._train_batch_size, #It still is happier with 1 than with variable sizes, although bundle() should work either way.
             sampler=train_sampler,
             collate_fn=data_collator,
             drop_last=self.args.dataloader_drop_last,
