@@ -90,7 +90,7 @@ def compute_group_score(pred_answers, gold_answers):
     for ind in range(len(gold_answers)):
         if pred_answers[ind].lower().strip() != gold_answers[ind].lower().strip():
             return 0
-    return 1
+    return 1 # # # # return (len(gold) - len(incorrect))/len(gold)
 
 
 def compute_consistency(pred_file, data_file, label_key="label"):

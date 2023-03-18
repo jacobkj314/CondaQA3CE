@@ -515,7 +515,7 @@ class Seq2SeqTrainerCE(Seq2SeqTrainer):
                 '''
                 # # # BEGIN TRAINER MODIFICATIONS
                 tr_losses_step = []
-                for bundle in bundling(inputs): #this breaks a 3D minibatch down into 2D minibatches
+                for bundle in bundling(inputs): #this breaks a 3D minibatch down into 2D bundles
                     if (
                         ((step + 1) % args.gradient_accumulation_steps != 0)
                         and args.local_rank != -1
@@ -825,10 +825,10 @@ def forwardCE(
         if labels is not None:
             # # # BEGIN MY CODE FOR CE LOSS
             ce = []
-            for i in range(labels.shape[0]):
+            for i in range(labels.shape[0]):#iterate across number of individual samples in bundle
               ce.append(
                   get_first_token_likelihood(
-                      self, 
+                      self, #the model itself
                       input_ids.roll(i, 0), #question conditional, so try each question with each answer
                       labels,
                       attention_mask.roll(i, 0)
