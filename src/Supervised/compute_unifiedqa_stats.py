@@ -87,10 +87,13 @@ def get_groups(gold_data):
 
 def compute_group_score(pred_answers, gold_answers):
     assert len(pred_answers) == len(gold_answers)
+    incorrect = 0 # # #
     for ind in range(len(gold_answers)):
         if pred_answers[ind].lower().strip() != gold_answers[ind].lower().strip():
-            return 0
-    return 1 # # # # return (len(gold) - len(incorrect))/len(gold)
+            incorrect += 1 # # #
+            '''return 0
+    return 1'''
+    return (len(gold_answers) - incorrect)/len(gold_answers) # # # Changing the score formulation 
 
 
 def compute_consistency(pred_file, data_file, label_key="label"):
