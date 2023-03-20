@@ -837,13 +837,13 @@ def forwardCE(
             z = torch.log( #normalizing denominator
                   sum(torch.exp(term) for term in ce) #add up all the denominators - using regular python sum because they are tensors in a list
                 ) 
-            ceLoss = torch.log( # return to log space# # # should this be *-1 ? I think it should, so that by minimizing loss we maximize the proportion of the distribution occupied by the right question
+            ceLoss = torch.log( # return to log space
                 torch.sum(#sum across instances
                     torch.exp( #switch from log space to linear space for sum
                       ce[0] - z #divide the correctly lined up pairings by normalizing constant (in log space) - index 0 is lined up correctly
                     )
                 )
-            )
+            ) * -1 #Multiply by -1 so that by minimizing loss we maximize the proportion of the distribution is taken up by the correct answer
             # # # END MY CODE FOR CE LOSS
             loss_fct = CrossEntropyLoss(ignore_index=-100)
             loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1)) + ceLoss # # # I added the ceLoss part
