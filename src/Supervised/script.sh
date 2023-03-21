@@ -25,6 +25,6 @@ export TRANSFORMER_CACHE="/scratch/general/vast/u0403624/huggingface_cache"
 
 #echo setup
 
-bash /uufs/chpc.utah.edu/common/home/u0403624/CondaQA_Private/src/Supervised/run_single_unifiedqa.sh unifiedqa-v2-t5-large-1251000 /scratch/general/vast/u0403624/condaqa_predictions/3CE
-#bash eval_single_unifiedqa_model.sh unifiedqa-v2-t5-large-1251000 /scratch/general/vast/u0403624/condaqa_predictions/3CE
-#bash compute_unifiedqa_stats.sh unifiedqa-v2-t5-large-1251000 /scratch/general/vast/u0403624/condaqa_predictions/3CE
+bash run_single_unifiedqa.sh unifiedqa-v2-t5-large-1251000 /scratch/general/vast/u0403624/condaqa_predictions/3CE
+bash eval_single_unifiedqa_model.sh unifiedqa-v2-t5-large-1251000 /scratch/general/vast/u0403624/condaqa_predictions/3CE
+bash compute_unifiedqa_stats.sh unifiedqa-v2-t5-large-1251000 /scratch/general/vast/u0403624/condaqa_predictions/3CE

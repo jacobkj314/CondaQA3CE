@@ -16,12 +16,12 @@ for SEED in "${SEEDS[@]}"; do
 
       OUTPUT_DIR=$2/${MODEL_NAME}_negation_all_${SEED}_train_${SETTING}_test_${TEST_FILE}      
       mkdir -p $OUTPUT_DIR #Remove? 
-
+      # # # changed test to dev on line 24
       python run_negatedqa_t5.py \
         --model_name_or_path $OUTPUT_DIR \
         --train_file ${DATA_DIR}/condaqa_train_unifiedqa.json \
         --validation_file ${DATA_DIR}/condaqa_dev_unifiedqa.json \
-        --test_file ${DATA_DIR}/condaqa_test_unifiedqa.json \
+        --test_file ${DATA_DIR}/condaqa_dev_unifiedqa.json \
         --do_eval \
         --do_predict \
         --predict_with_generate \

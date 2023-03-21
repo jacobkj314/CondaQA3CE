@@ -824,6 +824,7 @@ def forwardCE(
         loss = None
         if labels is not None:
             # # # BEGIN MY CODE FOR CE LOSS
+            temperature = 10 # # # hyperparameter for tuning, idea from Zhichao
             ce = []
             for i in range(labels.shape[0]):#iterate across number of individual samples in bundle
               ce.append(
@@ -832,7 +833,7 @@ def forwardCE(
                       input_ids.roll(i, 0), #question conditional, so try each question with each answer
                       labels,
                       attention_mask.roll(i, 0)
-                  )
+                  ) / temperature
               )
             z = torch.log( #normalizing denominator
                   sum(torch.exp(term) for term in ce) #add up all the denominators - using regular python sum because they are tensors in a list
