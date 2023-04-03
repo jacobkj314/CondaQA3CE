@@ -684,7 +684,10 @@ def get_first_token_likelihood(model, input_ids, out_ids, attention_mask_full = 
 
   iterInstances = [j for j in range(out_ids.shape[0])]
 
-  scores = model.generate(input_ids=input_ids, attention_mask=attention_mask, decoder_input_ids = decode_in_tokens, return_dict_in_generate=True, output_scores=True, max_new_tokens=1)['scores'][0]
+  # # # Replacing generate() with forward() -- this should let the backward hooks persist in the output scores
+  '''scores = model.generate(input_ids=input_ids, attention_mask=attention_mask, decoder_input_ids = decode_in_tokens, return_dict_in_generate=True, output_scores=True, max_new_tokens=1)['scores'][0]'''
+  scores = model(input_ids=input_ids, attention_mask=attention_mask, decoder_input_ids=decode_in_tokens)['logits']
+
   softmaxedScores = torch.log(torch.softmax(scores,dim=1))#also transform to log-likelihood
   score = softmaxedScores[iterInstances,out_ids[:,1]]
   score.requires_grad = True
